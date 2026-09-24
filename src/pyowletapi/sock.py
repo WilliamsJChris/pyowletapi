@@ -17,63 +17,13 @@ class PropertiesDict(TypedDict):
 
 
 class Sock:
-    """Class representing an Owlet sock device.
-
-    Attributes
-    ----------
-    name : str
-        The product name
-    mode: str
-        the product model
-    serial : str
-        the serial number of the device
-    oem_model : str
-        The oem model of the device
-    sw_version : str
-        The software version of the device
-    mac : str
-        The mac address the device
-    lan_ip : str
-        The current lan ip address of the device
-    connection_status : str
-        The current connection status of the device
-    device_type : str
-        The device type
-    manuf_model : str
-        The manufacturer's model number
-    api : OwletAPI
-        The current OwletAPI object being used to call the Owlet API
-    raw_properties : dict
-        A dictionary containing the raw response from the device properties api call
-    properties : dict
-        A formatted, cut down version of the current device properties
-
-    Methods
-    -------
-    get_property:
-        returns a specific property for the device
-    get_properties:
-        returns all the properties for the current device
-    normalise_properties:
-        takes the raw_properties and strips out only the most important properties making the dict object smaller and easier to use
-    update_properties
-        uses the OwletAPI object to call the Owlet server and return the current properties of the device.
-
-    """
+    """Class representing an Owlet sock device."""
 
     def __init__(
         self,
         api: OwletAPI,
         data: SockData,
     ) -> None:
-        """Constructs an Owlet sock object representing the owlet sock device.
-
-        Parameters
-        ----------
-        api (OwletAPI): OwletAPI object used to call the Owlet API
-        data (dict): Data returned from the Owlet API showing the details of the sock
-
-        """
         self._api = api
         self._name: str = data.get("product_name", "Owlet Baby Monitors")
         self._model: str = data.get("model", "")
@@ -152,29 +102,9 @@ class Sock:
         return self._revision
 
     def get_property(self, property: PropertyKey) -> Union[bool, str, float, int, None]:
-        """Returns the specific property based on the property argument passed in.
-
-        Parameters
-        ----------
-        property (str): The required property
-
-        Returns
-        -------
-        (str): Request property as a string
-
-        """
         return self._properties.get(property)
 
-    async def _normalise_properties(
-        self,
-    ) -> Properties:
-        """Takes the raw properties dictionary returned from the API and formats it into another dict that is more stripped down and easier to work with.
-
-        Returns
-        -------
-            (dict): Returns the stripped down properties as a dict
-
-        """
+    async def _normalise_properties(self) -> Properties:
         properties: Properties = {}
 
         for data_type, properties_tmp in PROPERTIES.items():
@@ -225,16 +155,18 @@ class Sock:
                     except (KeyError, TypeError, ValueError):
                         pass
 
+        # Preserve previous state unless APP_CMD_RESPONSE gives a new val
+        mon_recovery_state = self._properties.get("mon_recovery", False)
         if "APP_CMD_RESPONSE" in self._raw_properties:
             try:
-                cmd_resp = json.loads(self._raw_properties["APP_CMD_RESPONSE"]["value"])
-                if cmd_resp.get("cmd") == "mon_recovery":
-                    properties["mon_recovery"] = str(cmd_resp.get("val")).lower() == "true"
+                raw_val = self._raw_properties["APP_CMD_RESPONSE"].get("value", "")
+                cmd_resp = json.loads(raw_val) if isinstance(raw_val, str) else raw_val
+                if isinstance(cmd_resp, dict) and cmd_resp.get("cmd") == "mon_recovery":
+                    mon_recovery_state = str(cmd_resp.get("val", "")).lower() == "true"
             except (json.JSONDecodeError, TypeError, KeyError):
-                properties["mon_recovery"] = False
-        else:
-            properties["mon_recovery"] = False
+                pass
 
+        properties["mon_recovery"] = mon_recovery_state
         return properties
 
     async def _check_version(self) -> None:
@@ -254,26 +186,16 @@ class Sock:
         except (KeyError, json.JSONDecodeError, TypeError):
             pass
 
-    async def update_properties(
-        self,
-    ) -> PropertiesDict:
-        """Calls the Owlet api to update the properties and then returns the raw response dict, the formatted dict from
-        normalise_properties and any new api tokens if they have changed.
-
-        Returns
-        -------
-        (dict): Dictionary containing raw json response and stripped down properties
-
-        """
+    async def update_properties(self) -> PropertiesDict:
         properties = await self._api.get_properties(self.serial)
         self._raw_properties = properties["response"]
-        
+
         if self._version not in (2, 3):
             await self._check_version()
-            
+
         if self._revision is None and self._version == 3:
             await self._check_revision()
-            
+
         self._properties = await self._normalise_properties()
 
         response: PropertiesDict = {
@@ -287,13 +209,7 @@ class Sock:
         return response
 
     async def control_base_station(self, on: bool) -> bool:
-        """Calls the Owlet api to turn the base station on or off, returns a bool if this was successful.
-
-        Returns
-        -------
-        (bool): Was the command successful
-
-        """
+        """Calls the Owlet API to turn base station on or off."""
         value = json.dumps(
             {"ts": int(time.time()), "val": "true" if on else "false"},
         )
@@ -311,20 +227,12 @@ class Sock:
         return False
 
     async def control_recovery_mode(self, on: bool) -> bool:
-        """Calls the Owlet API to set monitor recovery mode on or off.
-
-        Returns
-        -------
-        (bool): Was the command successful
-        """
-        value = json.dumps(
-            {
-                "ts": int(time.time()),
-                "cmd": "mon_recovery",
-                "val": "true" if on else "false",
-            }
+        """Calls the Owlet API to set monitor recovery mode on or off."""
+        payload = json.dumps(
+            {"cmd": "mon_recovery", "val": "true" if on else "false"},
+            separators=(",", ":"),
         )
-        data = {"datapoint": {"metadata": {}, "value": value}}
+        data = {"datapoint": {"metadata": {}, "value": payload}}
 
         response = await self._api.post_command(
             self.serial,
