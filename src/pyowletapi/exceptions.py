@@ -18,5 +18,9 @@ class OwletEmailError(OwletError):
     """When email lookup or verification fails."""
 
 
+class OwletPasswordError(OwletError):
+    """When password verification fails."""
+
+
 class OwletDevicesError(OwletError):
     """when no devices are found."""
