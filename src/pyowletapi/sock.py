@@ -229,6 +229,16 @@ class Sock:
                     except KeyError:
                         pass
 
+        if "APP_CMD_RESPONSE" in self._raw_properties:
+            try:
+                cmd_resp = json.loads(self._raw_properties["APP_CMD_RESPONSE"]["value"])
+                if cmd_resp.get("cmd") == "mon_recovery":
+                    properties["mon_recovery"] = str(cmd_resp.get("val")).lower() == "true"
+            except (json.JSONDecodeError, TypeError, KeyError):
+                properties["mon_recovery"] = False
+        else:
+            properties["mon_recovery"] = False
+
         return properties
 
     async def _check_version(self) -> None:
