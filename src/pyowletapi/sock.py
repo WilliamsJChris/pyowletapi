@@ -295,3 +295,27 @@ class Sock:
         )
 
         return True if response else False
+
+    async def control_recovery_mode(self, on: bool) -> bool:
+        """Calls the Owlet API to set monitor recovery mode on or off.
+
+        Returns
+        -------
+        (bool): Was the command successful
+        """
+        value = json.dumps(
+            {
+                "ts": int(time.time()),
+                "cmd": "mon_recovery",
+                "val": "true" if on else "false",
+            }
+        )
+        data = {"datapoint": {"metadata": {}, "value": value}}
+
+        response = await self._api.post_command(
+            self.serial,
+            "APP_CMD_REQUEST",
+            data,
+        )
+
+        return True if response else False
