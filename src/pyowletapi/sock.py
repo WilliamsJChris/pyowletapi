@@ -17,7 +17,7 @@ class PropertiesDict(TypedDict):
 
 
 class Sock:
-    """Class representing a Owlet sock device.
+    """Class representing an Owlet sock device.
 
     Attributes
     ----------
@@ -40,11 +40,11 @@ class Sock:
     device_type : str
         The device type
     manuf_model : str
-        The manunfacturer's model number
+        The manufacturer's model number
     api : OwletAPI
         The current OwletAPI object being used to call the Owlet API
     raw_properties : dict
-        A dictionionary containing the raw response from the device properties api call
+        A dictionary containing the raw response from the device properties api call
     properties : dict
         A formatted, cut down version of the current device properties
 
@@ -70,8 +70,8 @@ class Sock:
 
         Parameters
         ----------
-        api (OwletAPI):OwletAPI object used to call the Owlet API
-        data (dict):Data returned from the Owlet API showing the details of the sock
+        api (OwletAPI): OwletAPI object used to call the Owlet API
+        data (dict): Data returned from the Owlet API showing the details of the sock
 
         """
         self._api = api
@@ -156,27 +156,23 @@ class Sock:
 
         Parameters
         ----------
-        property (str):The required property
+        property (str): The required property
 
         Returns
         -------
-        (str):Request property as a string
+        (str): Request property as a string
 
         """
-        return self._properties[property]
+        return self._properties.get(property)
 
     async def _normalise_properties(
         self,
     ) -> Properties:
         """Takes the raw properties dictionary returned from the API and formats it into another dict that is more stripped down and easier to work with.
 
-        Parameters
-        ----------
-            raw_properties (dict[str:dict]):The raw properties returned from the API call
-
         Returns
         -------
-            (dict):Returns the stripped down properties as a dict
+            (dict): Returns the stripped down properties as a dict
 
         """
         properties: Properties = {}
@@ -191,42 +187,42 @@ class Sock:
                     pass
 
         if self._version == 3:
-            vitals = json.loads(
-                self._raw_properties["REAL_TIME_VITALS"]["value"],
-            )
-
-            for data_type, vitals_list in VITALS_3.items():
-                for vital_desc, vital_key in vitals_list.items():
-                    match vital_desc:
-                        case "base_station_on":
-                            try:
-                                properties[vital_desc] = vitals["bso"]
-                            except KeyError:
-                                pass
-                        case _:
-                            try:
-                                properties[vital_desc] = data_type(
-                                    vitals[vital_key],
-                                )
-                            except KeyError:
-                                pass
-
             try:
-                properties["last_updated"] = datetime.datetime.strptime(
-                    self._raw_properties["REAL_TIME_VITALS"]["data_updated_at"],
-                    "%Y-%m-%dT%H:%M:%SZ",
-                ).strftime("%Y/%m/%d %H:%M:%S")
-            except KeyError:
+                vitals_raw = self._raw_properties.get("REAL_TIME_VITALS", {}).get("value", "{}")
+                vitals = json.loads(vitals_raw)
+
+                for data_type, vitals_list in VITALS_3.items():
+                    for vital_desc, vital_key in vitals_list.items():
+                        match vital_desc:
+                            case "base_station_on":
+                                try:
+                                    properties[vital_desc] = vitals["bso"]
+                                except (KeyError, TypeError):
+                                    pass
+                            case _:
+                                try:
+                                    val = vitals.get(vital_key)
+                                    if val is not None:
+                                        properties[vital_desc] = data_type(val)
+                                except (KeyError, TypeError, ValueError):
+                                    pass
+
+                if "data_updated_at" in self._raw_properties.get("REAL_TIME_VITALS", {}):
+                    properties["last_updated"] = datetime.datetime.strptime(
+                        self._raw_properties["REAL_TIME_VITALS"]["data_updated_at"],
+                        "%Y-%m-%dT%H:%M:%SZ",
+                    ).strftime("%Y/%m/%d %H:%M:%S")
+            except (KeyError, json.JSONDecodeError, TypeError):
                 pass
 
         if self._version == 2:
             for data_type, vitals_list in VITALS_2.items():
                 for vital_desc, vital_key in vitals_list.items():
                     try:
-                        properties[vital_desc] = data_type(
-                            self._raw_properties[vital_key]["value"],
-                        )
-                    except KeyError:
+                        val = self._raw_properties.get(vital_key, {}).get("value")
+                        if val is not None:
+                            properties[vital_desc] = data_type(val)
+                    except (KeyError, TypeError, ValueError):
                         pass
 
         if "APP_CMD_RESPONSE" in self._raw_properties:
@@ -250,10 +246,13 @@ class Sock:
         self._version = version
 
     async def _check_revision(self) -> None:
-        revision_json = json.loads(
-            self._raw_properties["oem_sock_version"]["value"],
-        )
-        self._revision = revision_json["rev"]
+        try:
+            revision_json = json.loads(
+                self._raw_properties["oem_sock_version"]["value"],
+            )
+            self._revision = revision_json["rev"]
+        except (KeyError, json.JSONDecodeError, TypeError):
+            pass
 
     async def update_properties(
         self,
@@ -263,16 +262,18 @@ class Sock:
 
         Returns
         -------
-        (dict):Dictionary containing three dictionaries, one with the raw json response from the API and another with the stripped down
-        properties from normalise_properties, the third will contain the new api tokens if they have changed, if they haven't changed this will be None
+        (dict): Dictionary containing raw json response and stripped down properties
 
         """
         properties = await self._api.get_properties(self.serial)
         self._raw_properties = properties["response"]
-        if self._version is None:
+        
+        if self._version not in (2, 3):
             await self._check_version()
+            
         if self._revision is None and self._version == 3:
             await self._check_revision()
+            
         self._properties = await self._normalise_properties()
 
         response: PropertiesDict = {
@@ -290,7 +291,7 @@ class Sock:
 
         Returns
         -------
-        (bool):Was the command successful
+        (bool): Was the command successful
 
         """
         value = json.dumps(
@@ -304,7 +305,10 @@ class Sock:
             data,
         )
 
-        return True if response else False
+        if response:
+            self._properties["base_station_on"] = on
+            return True
+        return False
 
     async def control_recovery_mode(self, on: bool) -> bool:
         """Calls the Owlet API to set monitor recovery mode on or off.
@@ -328,4 +332,7 @@ class Sock:
             data,
         )
 
-        return True if response else False
+        if response:
+            self._properties["mon_recovery"] = on
+            return True
+        return False
