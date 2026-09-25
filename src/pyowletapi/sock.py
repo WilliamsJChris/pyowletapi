@@ -162,7 +162,9 @@ class Sock:
                 raw_val = self._raw_properties["APP_CMD_RESPONSE"].get("value", "")
                 cmd_resp = json.loads(raw_val) if isinstance(raw_val, str) else raw_val
                 if isinstance(cmd_resp, dict) and cmd_resp.get("cmd") == "mon_recovery":
-                    mon_recovery_state = str(cmd_resp.get("val", "")).lower() == "true"
+                    # Check "result" first (from APP_CMD_RESPONSE), fallback to "val"
+                    res = str(cmd_resp.get("result") or cmd_resp.get("val") or "").lower()
+                    mon_recovery_state = res in ("on", "true")
             except (json.JSONDecodeError, TypeError, KeyError):
                 pass
 
@@ -229,7 +231,11 @@ class Sock:
     async def control_recovery_mode(self, on: bool) -> bool:
         """Calls the Owlet API to set monitor recovery mode on or off."""
         payload = json.dumps(
-            {"cmd": "mon_recovery", "val": "true" if on else "false"},
+            {
+                "cmd": "mon_recovery",
+                "val": "on" if on else "off",
+                "ts": int(time.time()),
+            },
             separators=(",", ":"),
         )
         data = {"datapoint": {"metadata": {}, "value": payload}}
