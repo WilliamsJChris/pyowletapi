@@ -156,7 +156,9 @@ class Sock:
                         pass
 
         # Preserve previous state unless APP_CMD_RESPONSE gives a new val
-        mon_recovery_state = self._properties.get("mon_recovery", False)
+        recovery_state = self._properties.get(
+            "recovery_mode", self._properties.get("mon_recovery", False)
+        )
         if "APP_CMD_RESPONSE" in self._raw_properties:
             try:
                 raw_val = self._raw_properties["APP_CMD_RESPONSE"].get("value", "")
@@ -164,11 +166,12 @@ class Sock:
                 if isinstance(cmd_resp, dict) and cmd_resp.get("cmd") == "mon_recovery":
                     # Check "result" first (from APP_CMD_RESPONSE), fallback to "val"
                     res = str(cmd_resp.get("result") or cmd_resp.get("val") or "").lower()
-                    mon_recovery_state = res in ("on", "true")
+                    recovery_state = res in ("on", "true")
             except (json.JSONDecodeError, TypeError, KeyError):
                 pass
 
-        properties["mon_recovery"] = mon_recovery_state
+        properties["recovery_mode"] = recovery_state
+        properties["mon_recovery"] = recovery_state
         return properties
 
     async def _check_version(self) -> None:
@@ -247,6 +250,7 @@ class Sock:
         )
 
         if response:
+            self._properties["recovery_mode"] = on
             self._properties["mon_recovery"] = on
             return True
         return False
