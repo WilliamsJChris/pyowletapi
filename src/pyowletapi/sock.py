@@ -236,11 +236,10 @@ class Sock:
         """Calls the Owlet API to set monitor recovery mode on or off."""
         payload = json.dumps(
             {
-                "cmd": "mon_recovery",
-                "val": "on" if on else "off",
                 "ts": int(time.time()),
-            },
-            separators=(",", ":"),
+                "cmd": "mon_recovery",
+                "val": "true" if on else "false",
+            }
         )
         data = {"datapoint": {"metadata": {}, "value": payload}}
 
