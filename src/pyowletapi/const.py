@@ -109,6 +109,7 @@ VITALS_3: dict[type, dict[PropertyKey, str]] = {
     },
     bool: {
         "base_station_on": "bso",
+        "recovery_mode": "mrs",
     },
     int: {
         "sock_connection": "sc",

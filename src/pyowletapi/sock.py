@@ -155,23 +155,24 @@ class Sock:
                     except (KeyError, TypeError, ValueError):
                         pass
 
-        # Preserve previous state unless APP_CMD_RESPONSE gives a new val
-        recovery_state = self._properties.get(
-            "recovery_mode", self._properties.get("mon_recovery", False)
-        )
-        if "APP_CMD_RESPONSE" in self._raw_properties:
-            try:
-                raw_val = self._raw_properties["APP_CMD_RESPONSE"].get("value", "")
-                cmd_resp = json.loads(raw_val) if isinstance(raw_val, str) else raw_val
-                if isinstance(cmd_resp, dict) and cmd_resp.get("cmd") == "mon_recovery":
-                    # Check "result" first (from APP_CMD_RESPONSE), fallback to "val"
-                    res = str(cmd_resp.get("result") or cmd_resp.get("val") or "").lower()
-                    recovery_state = res in ("on", "true")
-            except (json.JSONDecodeError, TypeError, KeyError):
-                pass
+        # Preserve previous state unless APP_CMD_RESPONSE gives a new val (if not in vitals)
+        if "recovery_mode" not in properties:
+            recovery_state = self._properties.get(
+                "recovery_mode", self._properties.get("mon_recovery", False)
+            )
+            if "APP_CMD_RESPONSE" in self._raw_properties:
+                try:
+                    raw_val = self._raw_properties["APP_CMD_RESPONSE"].get("value", "")
+                    cmd_resp = json.loads(raw_val) if isinstance(raw_val, str) else raw_val
+                    if isinstance(cmd_resp, dict) and cmd_resp.get("cmd") == "mon_recovery":
+                        # Check "result" first (from APP_CMD_RESPONSE), fallback to "val"
+                        res = str(cmd_resp.get("result") or cmd_resp.get("val") or "").lower()
+                        recovery_state = res in ("on", "true")
+                except (json.JSONDecodeError, TypeError, KeyError):
+                    pass
+            properties["recovery_mode"] = recovery_state
 
-        properties["recovery_mode"] = recovery_state
-        properties["mon_recovery"] = recovery_state
+        properties["mon_recovery"] = properties["recovery_mode"]
         return properties
 
     async def _check_version(self) -> None:
