@@ -36,6 +36,7 @@ PropertyKey = Literal[
     "last_updated",
     "critical_battery_alert",
     "critical_oxygen_alert",
+    "recovery_mode",
 ]
 
 
@@ -75,6 +76,7 @@ class Properties(TypedDict, total=False):
     base_battery_status: int
     hardware_version: str
     last_updated: str
+    recovery_mode: bool
 
 
 PROPERTIES: dict[type, dict[PropertyKey, str]] = {
